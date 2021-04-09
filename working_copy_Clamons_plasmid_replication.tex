@@ -1,0 +1,450 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+%% Use the option review to obtain double line spacing
+%% \documentclass[preprint,review,12pt]{elsarticle}
+
+%% Use the options 1p,twocolumn; 3p; 3p,twocolumn; 5p; or 5p,twocolumn
+%% for a journal layout:
+%% \documentclass[final,1p,times]{elsarticle}
+%% \documentclass[final,1p,times,twocolumn]{elsarticle}
+%% \documentclass[final,3p,times]{elsarticle}
+%% \documentclass[final,3p,times,twocolumn]{elsarticle}
+%% \documentclass[final,5p,times]{elsarticle}
+%% \documentclass[final,5p,times,twocolumn]{elsarticle}
+
+%% The graphicx package provides the includegraphics command.
+\usepackage{graphicx}
+%% The amssymb package provides various useful mathematical symbols
+\usepackage{amssymb}
+
+\usepackage{amsmath}
+
+%% The lineno packages adds line numbers. Start line numbering with
+%% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
+%% for the whole article with \linenumbers after \end{frontmatter}.
+\usepackage{lineno}
+
+\journal{bioRxiv}
+
+%% natbib.sty is loaded by default. However, natbib options can be
+%% provided with \biboptions{...} command. Following options are
+%% valid:
+
+%%   round  -  round parentheses are used (default)
+%%   square -  square brackets are used   [option]
+%%   curly  -  curly braces are used      {option}
+%%   angle  -  angle brackets are used    <option>
+%%   semicolon  -  multiple citations separated by semi-colon
+%%   colon  - same as semicolon, an earlier confusion
+%%   comma  -  separated by comma
+%%   numbers-  selects numerical citations
+%%   super  -  numerical citations as superscripts
+%%   sort   -  sorts multiple citations according to order in ref. list
+%%   sort&compress   -  like sort, but also compresses numerical citations
+%%   compress - compresses without sorting
+%%
+%% \biboptions{comma,round}
+
+% \biboptions{}
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Title, authors and addresses
+
+\title{Why you may want to model gene replication in stochastic models of synthetic gene circuits (and how)}
+
+%% use the tnoteref command within \title for footnotes;
+%% use the tnotetext command for the associated footnote;
+%% use the fnref command within \author or \address for footnotes;
+%% use the fntext command for the associated footnote;
+%% use the corref command within \author for corresponding author footnotes;
+%% use the cortext command for the associated footnote;
+%% use the ead command for the email address,
+%% and the form \ead[url] for the home page:
+%%
+%% \title{Title\tnoteref{label1}}
+%% \tnotetext[label1]{}
+%% \author{Name\corref{cor1}\fnref{label2}}
+%% \ead{email address}
+%% \ead[url]{home page}
+%% \fntext[label2]{}
+%% \cortext[cor1]{}
+%% \address{Address\fnref{label3}}
+%% \fntext[label3]{}
+
+
+%% use optional labels to link authors explicitly to addresses:
+%% \author[label1,label2]{<author name>}
+%% \address[label1]{<address>}
+%% \address[label2]{<address>}
+
+\author{Samuel Clamons}
+\author{Richard Murray}
+
+\address{Caltech, Pasadena, CA, United States}
+
+
+\begin{abstract}
+NO ABSTRACT YET.
+\end{abstract}
+
+\end{frontmatter}
+
+%% main text
+\section{Outline}
+\label{S:outline}
+
+All model simulations were performed in Python using the Bio-circuit Stochastic Single-Cell Reaction Analysis and Parameter Estimation (BioSCRAPE) package. 
+
+In Section \ref{S:quick}, we briefly describe several strategies for modeling biocircuits with explicitly-tracked, replicating genes, along with a few words on the advantages and disadvantages of each. 
+
+In Section \ref{S:intro}, we introduce the standard CRN-based dynamical modeling used to describe synthetic gene circuits, and highlight several ubiquitous modeling assumptions that will be important to consider when modeling gene replication. If you are already familiar with mathematical modeling of biocircuits, you can probably skip this section. However, considering some of the standard assumptions of biocircuit modeling may clarify some of our later modeling decisions.
+
+In Section \ref{S:motivation}, we consider two genetic circuits for which we may want to include an explicit representation of gene replication, and we explain why.
+
+In Section \ref{S:failures}, we consider a few obvious, straightforward solutions to the problems highlighted in Section \ref{S:motivation}, and explain when they fail.
+
+In Section \ref{S:hackmodels}, we describe several extremely simple ways to model gene replication that may not resemble natural mechanisms, but may be good enough for modeling synthetic circuits.
+
+In Section \ref{S:mechmodels}, we describe two mechanistic models of gene replication based on natural mechanisms, which are more complex than those of Section \ref{S:hackmodels} but should more faithfully reproduce natural replication dynamics and copy number distributions. 
+
+Finally, we give concluding remarks in Section \ref{S:conclusions}.
+
+\section{Quick Summary}\label{S:quick}
+
+If you need to model the dynamics of a replicating DNA sequence $D$ as part of a biocircuit model, you may wish to use one of the following strategies:
+
+\begin{enumerate}
+	\item \textbf{Na\"ive production and dilution}
+	\item \textbf{Unbinding rules at cell division}
+	\item \textbf{Dummy-triggered replication}
+	\item \textbf{Delayed replication reaction}
+	\item \textbf{Brendel \& Perelson ColE1 replication model}
+	\item \textbf{Simplified Brendel \& Perelson ColE1 replication model}	
+\end{enumerate}
+
+\section{Introduction to Synthetic Circuit Modeling}
+\label{S:intro}
+
+Synthetic biologists who design and build genetic circuits face a common engineering problem -- the systems they are engineering are complex and often difficult to predict using intuition alone. Building and testing a genetic circuit is sufficiently time-consuming and expensive that synthetic biologists like to have some guarantee that it might work before they build it. At the very least, they would like to know that \emph{if they correctly understand the parts and interactions between parts in the circuit}, that the circuit will behave as expected. 
+
+A common way to gain some confidence about the correct behavior of a circuit prior to actually building and testing it is to model its behavior mathematically. Often this modeling is done with ordinary differential equations (ODEs) describing the activity of a chemical reaction network (CRN) representing the circuit, with some simplifications for ease of use and analysis. 
+
+A CRN consists of a set of \emph{reactions}, each of which describes how a set of reactants transforms into a set of products, along with a rate constant setting the speed of the reaction. Here's a (very much simplified) example of a CRN modeling the production of glucose via photosynthesis, followed by production of maltose from enzymatic combination of two glucose molecules:
+
+\begin{align*}
+	6CO_2 + 6 H_2O &\xrightarrow{k_1} \text{Glucose} + 6 O_2\\
+	2 \text{ Glucose} + \text{Amylase} &\xrightarrow{k_2} \text{Maltose} + \text{Amylase}\\ 
+\end{align*} 
+
+From a CRN, we can use well-known rules to derive a series of ODEs describing the change in concentration over time of the species in the CRN. For this example:
+
+\begin{align*}
+	\frac{d[CO_2]}{dt} &= \frac{d[H_2O]}{dt} = -k_1[CO_2]^6[H_2O]^6\\
+	\frac{d[O_2]}{dt} &= k_1[CO_2]^6[H_2O]^6 \\
+	\frac{d[\text{Glucose}]}{dt} &= k_1[CO_2]^6[H_2O]^6 - k_2[\text{Glucose}]^2[\text{Amylase}]\\
+	\frac{d[\text{Maltose}]}{dt} &= k_2[\text{Glucose}]^2[\text{Amylase}]\\
+\end{align*}
+
+Assuming the CRNs these ODEs represent take place in a well-mixed system where all species are free to instantly diffuse throughout the reaction, the dynamics of the CRN will approach the ODE dynamics exactly as the concentrations of species becomes large. They can be used to mathematically prove behavior of a circuit (\emph{e.g.}, by identifying any steady states of the system as a function of the rate constants of the CRN), or can be numerically integrated to simulate the expected behavior of the circuit. 
+
+These ODE approximations are often good enough to generate useful intuition about biological circuits, but in reality genetic circuits operate in small volumes with small numbers of molecules, where stochastic ordering and frequency of reactions can have large impacts. The impact of stochastic noise on a biological circuit can be described with a chemical master equation {CITE}, but in practice these are difficult to use; more frequently, modelers will employ Gillespie's stochastic simulation algorithm (SSA) {CITE} and related algorithms to probabilistically sample example trajectories of the CRN over time. 
+
+Synthetic biologists typically use a number of common simplifying assumptions in gene circuit models, for a number of reasons. To understand some of these assumptions, let's consider a simple, classic example of a synthetic genetic circuit -- Gardner, Cantor, \& Collins's genetic toggle switch {CITE}. This circuit consists of two repressors engineered to repress each others' expression. Intuitively, either repressor may be active at a time, but once it is, it will repress the expression of the other, locking the toggle into whichever position it began in. In their real-world formulation, Gardner \emph{et al.} use \emph{LacI} and \emph{TetR} as their repressors of choice. Without loss of generality, we will instead consider two arbitrary repressor genes $G_1$ and $G_2$. 
+
+\subsection{Protein Production}
+
+What is an appropriate CRN describing the production of a protein from a gene? 
+
+The first simplifying assumption we will make is that most of the details of transcription and translation don't matter for our purposes. Instead of modeling the action of transcription factors, polymerases, ribosomes, and all their accompanying factors, cofactors, and other metabolic inputs and outputs, we will simplify transcription and translation into a single reaction each, for each gene. For our toggle switch
+
+\begin{align}
+	G_1 \xrightarrow{k_1^{tx}} G_1 + M_1\\
+	G_2 \xrightarrow{k_2^{tx}} G_2 + M_2\\
+	M_1 \xrightarrow{k_1^{tl}} M_1 + P_1\\
+	M_2 \xrightarrow{k_2^{tl}} M_2 + P_2
+\end{align}
+
+where $M_1$ and $P_1$ are the mRNA and protein produced by $G_1$, and similarly for $M_2$ and $P_2$. Here, and continuing, we will write $X$ instead of $[X]$ for concentration of a species $X$ in our dynamical equations, for simplicity. All of the complex dynamics of transcription have been bundled up into the two rate constants $k_1^{tx}$ and $k_2^{tx}$, and all of the complex dynamics of translation have been bundled up into two rate constants $k_1^{tl}$ and $k_2^{tl}$. 
+
+Yet even these four equations may be needlessly complex. A common further simplification (used by Gardner \emph{et al}. among others) is to say that transcription and translation are essentially one process of producing protein from gene:
+
+\begin{align}
+	G_1 \xrightarrow{k_1} G_1 + P_1\\
+	G_2 \xrightarrow{k_2} G_2 + P_2
+\end{align}
+
+These two equations cannot \emph{exactly} replicate the dynamics of $P_1$ and $P_2$ in equations 1-4, but they can get quite close, and are simpler to analyze. 
+
+Because these production reactions do not change the concentration of $G_1$ or $G_2$, we can alternatively lump the concentration of gene into the rate constant $k_1$, removing any explicit dependence on gene concentration:
+
+\begin{align}
+	\emptyset \xrightarrow{k_1^*} P_1\\
+	\emptyset \xrightarrow{k_2^*} P_2
+\end{align}
+
+where $k_1^* = k_1*[G_1]$ and $k_2^* = k_2*[G_2]$.
+
+\subsection{Repression}\label{ss:repression}
+
+Assuming $G_1$ and $G_2$ act like natural bacterial repressors like \emph{LacI} and \emph{TetR}, they function by binding to their target genes and blocking transcription. Importantly, natural repressors typically act as dimers or tetramers. For simplicity, let's assume that $P_1$ and $P_2$ form active dimers. Then we can model our repressors binding to their targets with 
+
+\begin{align}
+	2\,P_1 \underset{k^{df}_1}{\overset{k^{dr}_1}{\leftrightharpoons}} P_1^D\\
+	2\,P_2 \underset{k^{df}_2}{\overset{k^{dr}_2}{\leftrightharpoons}} P_2^D\\
+	P_1^D + G_2 \underset{k_1^f}{\overset{k_1^r}{\leftrightharpoons}} G_2^*\\
+	P_2^D + G_1 \underset{k_2^f}{\overset{k_2^r}{\leftrightharpoons}} G_1^*
+\end{align}
+
+Note that each binding reaction is paired with an associated unbinding reaction. These four reactions (or eight, depending on how you count) are sufficient to model repression -- whenever $G_1$ is in its $G_1^*$ state, there is no reaction allowing it to express $P_1$, and similarly for $G_2$. 
+
+Repression is almost never modeled this way. By far the more common approach is to abstract away the mechanisms of repression by assuming that the output of the repressed promoter with respect to its repressor follows a Hill function, i.e.
+
+\begin{align}
+	F(G_1) &\propto \frac{K_1^{N_1}}{P_2^{N_1} + K_1^{N_1}}\\
+	F(G_2) &\propto \frac{K_2^{N_2}}{P_1^{N_2} + K_2^{N_2}}
+\end{align}
+
+where $F(G)$ is the rate of expression from $G$, $K_1$ and $K_2$ are constants determining the concentration of repressor which halfway represses the target promoter, and $N_1$ and $N_2$ are a measure of ``cooperativity,'' which functionally measures the ``sharpness'' of the response of the promoter. 
+
+The Hill function assumption hides complexity and simplifies mathematical assumption, but it is not always accurate. Hill approximation is sometimes justified mathematically by showing that for a target $T$ and a binding molecule $B$, the mass action law $T + nB \underset{k_r}{\overset{k_f}{\leftrightharpoons}} TB_n$ implies that at steady state, the fraction of $T$ bound will be $\frac{[B]^n}{[B]^n + \frac{k_r}{k_f}^n}$. This is true, as written, but sometimes overlooked is that this (exact) function is written in terms of \emph{free} $B$ at equilibrium, \emph{not} the total amount of $B$ in the system (which would include $TB_n$). As such, the Hill function is only an approximation of the action of repression, and only holds under the assumption that most of the repressor is not bound. This is sometimes a good approximation (\emph{AraC} in \emph{E. coli} (CITE), or \emph{Pho2} in \emph{S. cerevisciae} (CITE)) but not always (\emph{LacI} in \emph{E. coli}(CITE)). 
+
+\vspace{.5in}
+FIGURE: Promoter output as a function of repressor; Hill approximation based on physiological parameters; Hill function fit. Each of these for a few different hypothetical repressors.
+\vspace{.5in}
+
+In practice, Hill functions are good enough at capturing the most essential feature of repression -- the output of the target gene is an S-shaped function of repressor concentration, with more or less sharpness. Hill function representations of actual biological systems are determined phenomenologically, by fitting the parameters of the Hill function directly to observed data, rather than by carefully measuring dissociation constants and mechanistically-derived cooperativities. Simply fitting a Hill function to observed data is tractable and practical, but the Hill approximation still obscures the mechanistic details of repression and makes certain questions difficult to answer. For example:
+
+\begin{itemize}
+	\item What happens to a repression curve as the concentration of target DNA changes?
+	\item How quickly does the repressed promoter become repressed, or un-repressed? (Notice that the Hill approximation assumes instantaneous steady-state between promoter and repressor -- a good assumption for many repressors, but, as we will see, not for all of them.)
+	\item What is the rate of exchange between repressor and DNA target? (This question is intimately related to the question of response speed.)
+\end{itemize}
+
+\subsection{Dilution}
+
+So far, we not included any reactions that can remove repressor proteins once their production stops. One straightforward mechanism we can use to remove proteins is to degrade them with a protein degradase enzyme, using a reaction like 
+
+\begin{align}\label{eq:deg1}
+	\text{Degradase} + P_1 \xrightarrow{k_{deg}} \text{Degradase}
+\end{align}
+
+or, if we are comfortable assuming that the degradase is present at high, constant concentration,
+
+\begin{align}\label{eq:deg2}
+	P_1 \xrightarrow{\gamma_{P_1}} \emptyset.
+\end{align}
+
+where now, $k_{deg}$ implicitly includes the concentration of degradase. In the ODE describing the dynamics of $P_1$, this degradation reaction creates a characteristic exponential decay term:
+
+\begin{align}
+	\frac{dP_1}{dt} = \hdots - \gamma_{P_1}P_1.
+\end{align}
+
+In a fast-growing cells, there is another mechanism that can ``remove'' protein -- dilution. If the volume of the cell grows exponentially, then the \emph{concentration} of a protein with constant molecular count will fall exponentially... which implies the same exponential decay term in the ODE for that species as would be created by degradation, only at a different rate $\gamma$. Typically, we will say that a CRN has ``dilution reactions'' of the form $X \xrightarrow{\gamma} \emptyset$ which emulate the action of continuous dilution.
+
+Notice that the strategy of representing dilution with an elimination reaction with a chemical elimination reaction has a somewhat unnatural interpretation in the context of stochastic simulation. The implication is that molecules will randomly disappear over time. In a real cell, we would expect reaction propensities involving diluted species to drop continuously as the cell grows. In stochastic simulation, we will instead see a discontinuous drop in propensity each time a molecule is destroyed by dilution, which could lead to unnatural behavior for molecules at very concentration. A more realistic alternative is to eschew the elimination reaction and use a stochastic simulation that explicitly models volume changes over time (CITE BIOSCRAPE).
+
+\subsection{Putting It Together: The Toggle Switch}
+
+Now we can write a ``complete'' description of our toggle switch:
+
+\begin{align}
+	\emptyset &\xrightarrow{F_1(P_2)} P_1\\
+	\emptyset &\xrightarrow{F_2(P_1)} P_2\\
+	P_1 &\xrightarrow{\gamma} \emptyset\\
+	P_2 &\xrightarrow{\gamma} \emptyset	
+\end{align}
+
+where $F_1(P_2) = \alpha_1\frac{K_1^{N_1}}{P_2^{N_1} + K_1^{N_1}}$ and similarly for $F_2(P_1)$. This system can be sampled with SSA, or we can use mass action laws to derive the following ODEs under assumptions of large volume and fast mixing:
+
+\begin{align}
+	\frac{dP_1}{dt} &= \alpha_1\frac{K_1^{N_1}}{P_2^{N_1} + K_1^{N_1}} - \gamma P_1\\
+	\frac{dP_2}{dt} &= \alpha_2\frac{K_2^{N_2}}{P_1^{N_2} + K_2^{N_2}} - \gamma P_2\\
+\end{align}
+
+In their original treatment, Gardner \emph{et al.} further non-dimensionalize and simplify their model to 
+
+\begin{align}
+	\frac{dP_1}{dt} &= \frac{\alpha_1}{1 + P_2^{N_1}} - P_1\\
+	\frac{dP_2}{dt} &= \frac{\alpha_2}{1 + P_1^{N_2}} - P_2\\	
+\end{align}
+
+and use these equations to derive necessary conditions for the toggle switch to work in a way matching intuition (namely, $N_1 > 1$, $N_2 > 1$, and $\alpha_1 \sim \alpha_2$). 
+
+\vspace{.5in}
+FIGURE: a) Schematic of toggle switch; b) stochastic and deterministic traces of toggle switch under different parameters.
+\vspace{.5in}
+
+\section{Why Gene Replication? Motivating Examples}\label{S:motivation}
+
+Notice that in our model of the toggle switch, we have quietly disposed of our DNA species $G_1$ and $G_2$ as species, and lumped their concentrations into the values of parameters. This is a reasonable simplification when two conditions hold true:
+
+\begin{enumerate}
+	\item \textbf{The concentration of DNA species is held constant by the cell.} Whether on genomic DNA or plasmids, most genes are copy number controlled by more or less complex cellular processes, and we can usually assume that these processes are functioning properly in the background.
+	\item \textbf{We do not need to track binding of species to the DNA.} This is a natural consequence of the Hill assumption made in section \ref{ss:repression} -- by directly representing expression as a function of repressor, we eliminate the need to explicitly track bound and unbound DNA states. 
+\end{enumerate}
+
+For each of these assumptions, we will consider a circuit for which that assumption does not hold. 
+
+\subsection{Integrase-Based Event Recording}
+
+First, let's look at a circuit that violates our assumption of constant DNA copy number, in this case by making the DNA itself an active readout of the circuit. Consider the integrase-based temporal logic gate \citep{hsiao2016}. This circuit logs the presence of either of two signal molecules $A$ and $B$, along with information about the relative timing of their appearance, using serine integrases to modify a shared DNA logging site. The logging site is designed so that it can be irreversibly modified by either of two different serine integrases (call them $Int_A$ and $Int_B$), each of which is expressed in response to one of the two signal molecules. If the cell detects $A$ before it detects $B$, then $Int_A$ flips part of the logging DNA in a way that activates a green fluorescent signal and primes the logger for detection of $B$. If $B$ is detected in this primed state, then $Int_B$ flips a different part of the logger in a way that switches the green fluorescent output to a red fluorescent output. If, in contrast, the cell detects $B$ before it detects $A$, $Int_B$ instead excises a critical promoter from the logging DNA and renders it incapable of expressing any fluorescent signal. 
+
+\vspace{.5in}
+FIGURE: Overview of the integrase-based temporal logic gate
+\vspace{.5in}
+
+In their original work, Hsiao \emph{et al.} show that, although the temporal logic gate produces a digital red-or-green-or-none signal in any particular cell, stochastic differences in timing in different cells of a recorder population bearing the circuit will lead to the population expressing some mix of red, green, and nothing. Furthermore, the fraction of the population expressing each color carries information about how long the population was exposed to each signal, and in what order. 
+
+Hsiao \emph{et al.} used a DNA logger integrated into the genome of engineered \emph{E. coli} cells, ensuring that each cell would only carry a single copy of the logger (technically not true, but functionally true -- after a few division cycles, each logging cell reliably bears loggers descended from a single copy of a parent chromosome). Would this circuit still work if the logging DNA were on a plasmid, instead of genome-integrated? How would plasmid partitioning {CITE} and fluctuating copy number {CITE} affect the circuit's output? Could a single cell (or a small number of cells) with temporal logic gates on a high-copy plasmid stand in for a large population of cells with the same circuit on their genomes? 
+
+We can answer these questions with a model of the temporal logic gate. Consider a logging plasmid $L$ which can take the states $L$, $L_A$, $L_B$, and $L_{AB}$ depending on the action and order of action of $Int_A$ and $Int_B$. We will say that the integrases are activated as a function of their respective inducers $A$ and $B$:
+
+\begin{align}
+	\emptyset &\xrightarrow{H_{A}(A)} Int_A\\
+	\emptyset &\xrightarrow{H_{B}(B)} Int_B\\	
+\end{align}
+
+where $H_{X}(X)$ is a Hill function of inducer $X \in \{A, B\}$ such that $H_{X}(X) = \frac{X^{N_X}}{X^{N_X} + K_X}$. Along with a rule for dilution at rate $\gamma$, this gives ODEs describing integrase behavior:
+
+\begin{align}
+	\frac{dInt_A}{dt}  &= \frac{A^{N_A}}{A^{N_A} + K_A} - \gamma Int_A\\
+	\frac{dInt_B}{dt}  &= \frac{B^{N_B}}{B^{N_B} + K_B} - \gamma Int_B.
+\end{align}
+
+We can use a similar hill approximation to describe the action of integrases on the logger. We could instead model the individual binding and unbinding reactions of protein to and from DNA, as we will in the next example, but for this example we will model integrase activity as a simple Hill function to more clearly highlight the relevant feature of the temporal logic circuit model, which is that most of the important, explicitly-tracked species in the model are plasmids. 
+
+\begin{align}
+	L &\xrightarrow{H_{IntA}(Int_A)} L_A\\
+	L &\xrightarrow{H_{IntB}(Int_B)} L_B\\
+	L_A &\xrightarrow{H_{IntAB}(Int_B)} L_{AB}\\
+\end{align}
+
+If we are content with a deterministic, bulk-action treatment of the temporal logic gate, then we are done. Overall logger plasmid copy numbers are conserved, and integrase functions only to switch logger plasmids between states. However, this model is useless for answering questions about how cells with mixed plasmid populations might drift or fix over time. To answer those questions, we'll need some mechanisms for replicating and diluting out plasmids. We can start by adding our standard dilution reactions
+
+\begin{align}
+	L &\xrightarrow{\gamma} \emptyset \\
+	L_A &\xrightarrow{\gamma} \emptyset \\
+	L_B &\xrightarrow{\gamma} \emptyset \\
+	L_AB &\xrightarrow{\gamma} \emptyset			
+\end{align}
+
+but this leaves us with a set of reactions that can destroy logging plasmids but not create them, which can only lead to cells where the logger has been lost. We will need some way to model the production of logging plasmids, which brings us to the central question of this paper -- what is the appropriate way to model replication of DNA components in a synthetic circuit? 
+
+Note how this circuit violates the assumption of constant copy number. Although the cell might control the \emph{overall} copy number of logger plasmid $L + L_A + L_B + L_{AB}$, the fraction of plasmids in each subpopulation will have to change over time for the circuit to be useful. 
+
+\subsection{A CRISPRi-based Repressilator}\label{ss:crispriex}
+
+Now let's consider a circuit for which DNA copy number might remain constant, but for which details of binding and unbinding matter, making it potentially important to explicitly track different DNA states. One such circuit is the 5-node CRISPRi-based repressilator, shown in Figure FIGNUM.
+
+\vspace{.5in}
+Schematic of a 5-node CRISPRi repressilator, with deterministic simulation.
+\vspace{.5in}
+
+CRISPRi circuits use deactivated Cas9 (dCas) loaded with different guide RNAs (gRNAs) as their active components {CITE}. Different gRNAs are expressed to target a shared pool of dCas proteins to different DNA locations, with each gRNA causing dCas to bind to and repress the expression of one or more target genes. Guide RNAs can even be used to repress the transcription of other guide RNAs, allowing the creation of CRISPRi circuits. In the 5-node repressilator shown in Figure {FIGNUM}, five different gRNAs are arranged in a cycle with each gRNA repressing the next gRNA in the cycle. With appropriate parameter tuning, this circuit will cycle through the expression of each gRNA in turn, acting as an autonomous oscillator. 
+
+Readers familiar with the history of synthetic biology will note that this model is quite similar to the classic three-node repressilator, which was one of the earliest examples of synthetic biology {CITE}. The repressilator's behavior is well-captured by traditional models without explicitly tracking DNA species. Why wouldn't a CRISPRi repressilator be modeled just as easily? 
+
+One possible reason is that the action of CRISPRi components is relatively slow, with a single molecule of dCas derived from \textit{S. pyogenes} taking approximately six hours to find a genomic target in \textit{E. coli} \cite{Jones2017}. Functional repression with dCas can be sped up to a time scale of minutes by using high concentrations of dCas, but in a multi-node CRISPRi circuit even a large pool of dCas must be split up between several gRNAs. We may wish to ask how the speed of CRISPRi action affects the function of a circuit with time-varying components (\textit{e.g.} a repressilator), and a model with an instantaneous Hill function approximation of CRISPRi action will not answer that question. 
+
+Instead, we will use a model that explicitly tracks DNA binding states for each of five promoters $G_1, G_2, G_3, G_4$, and $G_5$. Each gene $G_i$ will produce a guide $gRNA_i$ that, when complexed with dCas, targets $G_{i+1}$ (with $gRNA_5$ wrapping back to repress $G_1$). Any guide $gRNA_i$ can reversibly bind to dCas ($C$) to form a complex  $C_i$, which itself can reversibly bind to its target to form a non-transcribing complex $G_{i+1}^C$. In CRN form, including dilution of dCas and gRNAs,
+
+\begin{align}
+	\emptyset &\xrightarrow{\alpha_C} C\\
+	G_i &\xrightarrow{\alpha_i} G_i + gRNA_i\\
+	gRNA_i + C &\underset{k_{Ci}^f}{\overset{k_{Ci}^r}{\leftrightharpoons}} C_i\\
+	\label{eq:casbindunbind} C_i + G_{i+1} &\underset{k_{Gi}^f}{\overset{k_{Gi}^r}{\leftrightharpoons}} G_{i+1}^C\\
+	gRNA_i &\xrightarrow{\gamma_g + \gamma} \emptyset\\
+	C &\xrightarrow{\gamma} \emptyset\\
+	C_i &\xrightarrow{\gamma_g + \gamma} \emptyset
+\end{align}
+
+for $i\in{1,\dots 5}$, again with the last gRNA wrapping back to target the first (so $5+1=1$), and where $\gamma_g$ is the rate at which the cell actively degrades guide RNAs, on top of dilution. Once again, we may want to consider 
+
+One additional fact which we may wish to include in this model is that, at least in fast-growing prokaryotes, dCas complexes do not typically unbind from their targets except when actively displaced by DNA replication \cite{Jones2017}. This can be captured most simply by setting $k_{G_i}^r = \gamma$. We will return to this coupled-unbinding assumption in later sections. 
+
+How can we handle gene replication dynamics in this model? One option is to simply include rules for duplication and dilution of genes, at the rate of cell growth $\gamma$:
+
+\begin{align}
+	G_i &\xrightarrow{\gamma} 2G_i\\
+	\label{eq:diluteandunbind} G_i^C &\xrightarrow{\gamma} 2G_i + C_{i-1}\\
+	G_i &\xrightarrow{\gamma} \emptyset \\
+	G_i^C &\xrightarrow{\gamma} \emptyset.
+\end{align}
+
+where reaction (\ref{eq:diluteandunbind}) replaces the unbinding reaction in (\ref{eq:casbindunbind}) We've coupled plasmid replication to dCas unbinding. If we wished to keep unbinding and replication separate, we could instead write dilution of complexed gene as $G_i^C \rightarrow G_i + G_i^C$ (note that DNA replication should not duplicate dCas protein!). As a sanity check, we can verify that this does indeed give us a model in which genes remain constant concentration, as for any gene $G_i$,
+
+\begin{align}
+	\frac{dG_i}{dt} &= -k^f_{G_i}*C_{i-1}*G_i + \gamma G_i + 2\gamma G_i^C - \gamma G_i\\
+	\frac{dG_i^C}{dt} &= k^f_{G_i}*C_{i-1}*G_i - \gamma G_i^C - \gamma G_i^C.
+\end{align}
+
+Adding these two equations together, we find that the rate of change of total gene with time is 0. As we can see, it is straightforward to model gene replication dynamics in a deterministic biocircuit model. We shall soon see, however, that in the stochastic realm, this simple fix will no longer work. 
+
+\section{Obvious Solutions That Don't Work}\label{S:failures}
+
+\subsection{Na\"ive Gene Duplication}
+
+As we saw at the end of Section \ref{ss:crispriex}, it is generally straightforward to write down chemical reactions that will replicate and dilute genes in a balanced way, and this strategy is generally sufficient for modeling genes in continuous, deterministic regimes. What about stochastic regimes? 
+
+We can see the problem with a na\"ive $gene \rightarrow gene + gene$ strategy with a few stochastic simulations:
+
+\vspace{.5in}
+FIGURE: Stochastic simulation of D -> 2D, D -> Ø. Show that copy number is unstable. 
+\vspace{.5in}
+
+As we can see in Figure {NUMBER}, blind self-replication is not stable. This is because the overall rate of DNA production in this model is \emph{proportional to the current concentration of DNA}, which means that any chance increase in copy number tends to lead to higher copy number and any chance decrease in copy number tends to lead to a lower copy number. DNA concentration effectively becomes a random walk, with an absorbing state at zero DNA. 
+
+Why doesn't this instability show up in deterministic versions of these models? Actually it does -- change the gene replication rate to be slightly different from dilution rate, and the deterministic model will also predict either total loss of gene or an unbounded explosion in copy number. The na\i"ve model only works when we can set tune constants of production and dilution to cancel out exactly. For any other case, we will need to find a different strategy.
+
+\subsection{Instantaneous Replication Rules}
+
+
+
+\section{Blatantly Cheating: Simple Hacks to Get Gene Replication}\label{S:hackmodels}
+
+\section{Gently Cheating: Mechanistic Models of Gene Replication}\label{S:mechmodels}
+
+\section{Conclusions} \label{S:conclusions}
+
+% Figure example
+
+%\begin{figure}[h]
+%\centering
+%\includegraphics[scale=1]{activators_vs_repressors.pdf}
+%\caption{Changes in expression when the concentrations of two regulators (an activator and a repressor) are changed under different regulator concentration regimes. Both the repressor and the activator change expression 10-fold (top table). At low saturation of target promoter by the regulators, the activated promoter is more sensitive to changes in regulator concentration than the regulated promoter (middle table). Conversely, at high target saturation, the activated promoter is more robust to changes in regulator concentration (bottom table).}
+%\label{actvsrep}
+%\end{figure}
+
+
+%% References with bibTeX database:
+\section{References}
+
+%\bibliographystyle{model1-num-names}
+\bibliographystyle{plain}
+\bibliography{plasmid_replication.bib}
+
+%% Authors are advised to submit their bibtex database files. They are
+%% requested to list a bibtex style file in the manuscript if they do
+%% not want to use model1-num-names.bst.
+
+%% References without bibTeX database:
+
+% \begin{thebibliography}{00}
+
+%% \bibitem must have the following form:
+%%   \bibitem{key}...
+%%
+
+% \bibitem{}
+
+% \end{thebibliography}
+
+
+\end{document}
+
+%%
+%% End of file `elsarticle-template-1-num.tex'.
